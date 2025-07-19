@@ -57,7 +57,64 @@ jobs:
           aws ecr get-login-password --region $AWS_REGION | \
             docker login --username AWS --password-stdin $ECR_REGISTRY
 
-      - name: Set Docker builder to classic
+      - name: Set Docker builder to classicname: CI/CD Pipeline - Langflow to ECS Fargate
+
+on:
+  push:
+    branches: [main]
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}   # e.g., 123456789012.dkr.ecr.us-east-1.amazonaws.com/langflow
+  ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}       # e.g., 123456789012.dkr.ecr.us-east-1.amazonaws.com
+  IMAGE_TAG: latest
+
+jobs:
+  deploy:
+    name: Build, Push to ECR, Deploy to ECS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+         node-version: 18
+
+      - name: Install AWS CDK
+        run: npm install -g aws-cdk
+
+      - name: Bootstrap AWS CDK
+        run: cdk bootstrap
+        env:
+         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+         AWS_REGION: us-east-1
+      
+      - name: Install CDK Dependencies
+        working-directory: infra  
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        run: |
+          aws ecr get-login-password --region $AWS_REGION | \
+            docker login --username AWS --password-stdin $ECR_REGISTRY
         run: docker buildx stop || true
 
       - name: Build and Push Docker Image
