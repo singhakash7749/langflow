@@ -25,7 +25,7 @@ jobs:
           python-version: "3.10"
 
       - name: Install CDK Dependencies
-        working-directory: infra  # ✅ Ensure this directory exists in your repo!
+        working-directory: infra  
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
@@ -47,7 +47,7 @@ jobs:
 
       - name: Build and Push Docker Image
         run: |
-          docker build -t $ECR_REPOSITORY:$IMAGE_TAG .
+          docker build -t $ECR_REPOSITORY:$IMAGE_TAG ./langflow
           docker push $ECR_REPOSITORY:$IMAGE_TAG
       - name: Build and Push Docker Image
         run: |
