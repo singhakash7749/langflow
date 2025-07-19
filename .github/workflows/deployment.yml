@@ -51,7 +51,7 @@ jobs:
           docker buildx build \
           --platform linux/amd64 \
           --tag $ECR_REPOSITORY:$IMAGE_TAG \
-          --push .
+          --push langflow
 
 
       - name: CDK Bootstrap
