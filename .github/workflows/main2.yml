@@ -1,0 +1,60 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest # Or your preferred runner image
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4 # Always start with checking out your code
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18' # Or your desired Node.js version
+
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Debug: List contents of repository root
+      run: |
+        echo "Listing contents of repository root:"
+        pwd
+        ls -F
+
+    - name: Install Node.js and Python dependencies
+      # The 'working-directory' must point to the actual directory
+      # where your package.json and requirements.txt are located.
+      # If 'infra' is a subdirectory of your repository root, use './infra'.
+      # If they are directly in the repository root, you can omit working-directory
+      # or set it to '.'
+      working-directory: ./infra
+      run: |
+        echo "Changing to working directory: $(pwd)"
+        npm install
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+      env:
+        # These environment variables are mostly for Python and may not be strictly
+        # necessary if actions/setup-python handles the paths correctly.
+        # However, keeping them won't hurt if the paths are accurate for the runner.
+        AWS_REGION: us-east-1
+        IMAGE_TAG: latest
+        pythonLocation: /opt/hostedtoolcache/Python/3.10.18/x64
+        PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.10.18/x64/lib/pkgconfig
+        Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.18/x64
+        Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.18/x64
+        Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.18/x64
+        LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.10.18/x64/lib
+
+    # Add subsequent steps here (e.g., build, test, deploy)
