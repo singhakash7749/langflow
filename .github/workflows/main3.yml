@@ -1,0 +1,90 @@
+# .github/workflows/deploy.yml
+
+name: CI/CD Pipeline to ECS Fargate
+
+# Controls when the workflow will run
+on:
+  push:
+    branches:
+      - main # Trigger the workflow on pushes to the main branch
+
+# Permissions required for OIDC authentication with AWS
+permissions:
+  id-token: write # Required for authenticating with AWS via OIDC
+  contents: read  # Required to checkout the repository code
+
+# Define environment variables for the workflow
+env:
+  AWS_REGION: us-east-1 # Replace with your AWS region (e.g., us-west-2, eu-central-1)
+  ECR_REPOSITORY: my-app-repo # Replace with your ECR repository name
+  ECS_SERVICE: my-ecs-service # Replace with your ECS service name
+  ECS_CLUSTER: my-ecs-cluster # Replace with your ECS cluster name
+  ECS_TASK_DEFINITION: .github/workflows/task-definition.json # Path to your ECS task definition JSON file
+  CONTAINER_NAME: my-app-container # The name of the container within your task definition (e.g., as defined in the 'name' field of your container definition)
+
+jobs:
+  deploy:
+    name: Deploy to ECS Fargate
+    runs-on: ubuntu-latest # Use the latest Ubuntu runner
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4 # Action to checkout your repository code
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4 # Action to configure AWS credentials
+        with:
+          aws-region: ${{ env.AWS_REGION }} # Use the AWS region from environment variables
+          # Replace with the ARN of the IAM role that GitHub Actions will assume
+          # This role needs permissions to push to ECR and deploy to ECS.
+          role-to-assume: arn:aws:iam::123456789012:role/github-actions-oidc-role # <-- IMPORTANT: Update this with your IAM Role ARN
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2 # Action to log in to ECR
+
+      - name: Build and push Docker image to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }} # Get ECR registry URL from the login step
+          IMAGE_TAG: ${{ github.sha }} # Use the commit SHA as the image tag
+        run: |
+          # Build the Docker image
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          # Tag the image with 'latest' as well
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          # Push the Docker image to ECR
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "Docker image pushed: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+      - name: Download and update ECS task definition
+        id: render-task-def
+        # This step reads your existing task definition file,
+        # updates the image tag for your container, and saves it to a new file.
+        run: |
+          # Use jq to update the image in the task definition.
+          # Ensure 'jq' is installed on the runner (it usually is on ubuntu-latest).
+          # Replace 'my-app-container' with the actual name of your container in the task definition.
+          cat ${{ env.ECS_TASK_DEFINITION }} | jq \
+            --arg IMAGE "${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}" \
+            '.containerDefinitions[] |= if .name == "${{ env.CONTAINER_NAME }}" then .image = $IMAGE else . end' \
+            > task-definition-new.json
+
+      - name: Deploy to ECS service
+        # This step registers a new task definition revision and updates the ECS service
+        # to use this new revision, triggering a new deployment.
+        run: |
+          # Register the new task definition revision
+          TASK_DEFINITION_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://task-definition-new.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "New Task Definition ARN: $TASK_DEFINITION_ARN"
+
+          # Update the ECS service to use the new task definition
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --task-definition $TASK_DEFINITION_ARN \
+            --force-new-deployment
+
+          echo "Deployment initiated for ECS service ${{ env.ECS_SERVICE }}."
