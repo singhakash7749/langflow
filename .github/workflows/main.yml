@@ -27,8 +27,21 @@ jobs:
         with:
           node-version: 18
 
+      # --- START: Added/Combined Caching for Node.js modules ---
+      - name: Cache Node.js modules
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+      # --- END: Added/Combined Caching for Node.js modules ---
+
       - name: Install AWS CDK
         run: npm install -g aws-cdk
+        # If you have a package.json in your 'infra' directory with cdk as a dependency,
+        # you might run `npm ci` or `npm install` there instead of global install.
+        # But for a simple global CLI usage, `npm install -g aws-cdk` is fine.
 
       - name: Install CDK Dependencies
         working-directory: infra
@@ -52,7 +65,7 @@ jobs:
             docker login --username AWS --password-stdin $ECR_REGISTRY
 
       - name: Stop Docker buildx if running
-        run: docker buildx stop || true
+        run: docker buildx stop || true # Good practice to ensure a clean state
 
       - name: Build and Push Docker Image
         env:
