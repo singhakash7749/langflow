@@ -44,8 +44,12 @@ jobs:
 
       - name: Build and Push Docker Image
         run: |
-          docker build -t $ECR_REPOSITORY:$IMAGE_TAG .
-          docker push $ECR_REPOSITORY:$IMAGE_TAG
+          docker buildx create --use
+          docker buildx build \
+          --platform linux/amd64 \
+          --tag $ECR_REPOSITORY:$IMAGE_TAG \
+          --push .
+
 
       - name: CDK Bootstrap
         working-directory: infra
