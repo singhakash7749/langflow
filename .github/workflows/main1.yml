@@ -1,0 +1,85 @@
+
+name: CI/CD Pipeline - Langflow to ECS Fargate
+
+on:
+  push:
+    branches: [main]
+
+env:
+  AWS_REGION: us-east-1
+  IMAGE_TAG: latest
+
+jobs:
+  deploy:
+    name: Build, Push to ECR, Deploy to ECS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Cache Node.js modules
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install AWS CDK globally
+        run: npm install -g aws-cdk
+
+      - name: Install CDK app dependencies (npm + pip)
+        working-directory: infra
+        run: |
+          npm install
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+          ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+        run: |
+          aws ecr get-login-password --region $AWS_REGION | \
+            docker login --username AWS --password-stdin $ECR_REGISTRY
+
+      - name: Stop Docker buildx if running
+        run: docker buildx stop || true
+
+      - name: Build and Push Docker Image
+        env:
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
+        run: |
+          docker buildx create --use
+          docker buildx build \
+            --platform linux/amd64 \
+            --file Dockerfile \
+            --tag $ECR_REPOSITORY:$IMAGE_TAG \
+            --push .
+
+      - name: CDK Bootstrap
+        working-directory: infra
+        run: cdk bootstrap --app "npx ts-node bin/app.ts" aws://591098699538/us-east-1
+
+      - name: CDK Deploy
+        working-directory: infra
+        run: cdk deploy --app "npx ts-node bin/app.ts" --require-approval never
