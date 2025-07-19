@@ -1,0 +1,63 @@
+name: Deploy to ECS
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: langflow-ecr # Matches your Terraform ECR repo name
+  ECS_CLUSTER: langflow-cluster
+  ECS_SERVICE: langflow-service
+  CONTAINER_NAME: langflow-container
+  TASK_FAMILY: langflow-task
+
+jobs:
+  deploy:
+    name: Build and Deploy to ECS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build Docker image
+        run: |
+          IMAGE_TAG=$(date +%s)
+          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+          docker build -t $ECR_REPOSITORY:$IMAGE_TAG .
+
+      - name: Tag and Push Docker image to ECR
+        run: |
+          REPOSITORY_URI=$(aws ecr describe-repositories --repository-names $ECR_REPOSITORY --region $AWS_REGION --query 'repositories[0].repositoryUri' --output text)
+          docker tag $ECR_REPOSITORY:$IMAGE_TAG $REPOSITORY_URI:$IMAGE_TAG
+          docker push $REPOSITORY_URI:$IMAGE_TAG
+          echo "REPOSITORY_URI=$REPOSITORY_URI" >> $GITHUB_ENV
+
+      - name: Register new ECS task definition revision
+        run: |
+          NEW_TASK_DEF=$(aws ecs describe-task-definition --task-definition $TASK_FAMILY)
+          UPDATED_TASK_DEF=$(echo "$NEW_TASK_DEF" | jq --arg IMAGE "$REPOSITORY_URI:$IMAGE_TAG" \
+            '.taskDefinition.containerDefinitions[0].image = $IMAGE | {family: .taskDefinition.family, networkMode: .taskDefinition.networkMode, requiresCompatibilities: .taskDefinition.requiresCompatibilities, cpu: .taskDefinition.cpu, memory: .taskDefinition.memory, executionRoleArn: .taskDefinition.executionRoleArn, containerDefinitions: .taskDefinition.containerDefinitions}')
+          echo "$UPDATED_TASK_DEF" > new-task-def.json
+          aws ecs register-task-definition --cli-input-json file://new-task-def.json
+
+      - name: Update ECS service to use new task definition
+        run: |
+          NEW_REVISION=$(aws ecs describe-task-definition --task-definition $TASK_FAMILY | jq -r '.taskDefinition.revision')
+          aws ecs update-service \
+            --cluster $ECS_CLUSTER \
+            --service $ECS_SERVICE \
+            --task-definition $TASK_FAMILY:$NEW_REVISION
