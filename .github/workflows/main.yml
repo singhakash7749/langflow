@@ -82,7 +82,7 @@ jobs:
 
       - name: CDK Bootstrap
         working-directory: infra
-        run: cdk bootstrap
+        run: cdk bootstrap aws://591098699538/us-east-1
 
       - name: CDK Deploy
         working-directory: infra
