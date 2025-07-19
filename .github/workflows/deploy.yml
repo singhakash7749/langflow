@@ -1,0 +1,63 @@
+name: Deploy to AWS ECS
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  AWS_REGION: us-east-1            # Replace with your AWS region
+  ECR_REPOSITORY: langflow-ecr    # Your ECR repo name
+  ECS_CLUSTER: langflow-cluster    # Your ECS cluster name
+  ECS_SERVICE: langflow-service    # Your ECS service name
+  IMAGE_TAG: ${{ github.sha }}     # Use commit SHA as image tag
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repo
+      uses: actions/checkout@v3
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+
+    - name: Build, tag, and push Docker image to ECR
+      run: |
+        docker build -t $ECR_REPOSITORY:$IMAGE_TAG .
+        docker tag $ECR_REPOSITORY:$IMAGE_TAG ${{ steps.login-ecr.outputs.registry }}/${ECR_REPOSITORY}:$IMAGE_TAG
+        docker push ${{ steps.login-ecr.outputs.registry }}/${ECR_REPOSITORY}:$IMAGE_TAG
+
+    - name: Update ECS task definition with new image
+      id: task-def
+      run: |
+        # Get current task definition JSON
+        aws ecs describe-task-definition --task-definition $ECS_SERVICE > task-def.json
+
+        # Update image in container definitions
+        jq --arg IMG "${{ steps.login-ecr.outputs.registry }}/${ECR_REPOSITORY}:$IMAGE_TAG" \
+          '.taskDefinition.containerDefinitions[0].image = $IMG' task-def.json > new-task-def.json
+
+        # Register new task definition revision
+        aws ecs register-task-definition \
+          --cli-input-json file://new-task-def.json > new-task-def-response.json
+
+        # Extract new task definition ARN
+        NEW_TASK_DEF_ARN=$(jq -r '.taskDefinition.taskDefinitionArn' new-task-def-response.json)
+        echo "::set-output name=task_def_arn::$NEW_TASK_DEF_ARN"
+
+    - name: Deploy updated task definition to ECS service
+      run: |
+        aws ecs update-service \
+          --cluster $ECS_CLUSTER \
+          --service $ECS_SERVICE \
+          --task-definition ${{ steps.task-def.outputs.task_def_arn }}
