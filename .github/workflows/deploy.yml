@@ -6,11 +6,11 @@ on:
       - main
 
 env:
-  AWS_REGION: us-east-1            # Replace with your AWS region
-  ECR_REPOSITORY: langflow-ecr    # Your ECR repo name
-  ECS_CLUSTER: langflow-cluster    # Your ECS cluster name
-  ECS_SERVICE: langflow-service    # Your ECS service name
-  IMAGE_TAG: ${{ github.sha }}     # Use commit SHA as image tag
+  AWS_REGION: us-east-1           
+  ECR_REPOSITORY: langflow-ecr   
+  ECS_CLUSTER: langflow-cluster    
+  ECS_SERVICE: langflow-service    
+  IMAGE_TAG: ${{ github.sha }}     
 
 jobs:
   deploy:
