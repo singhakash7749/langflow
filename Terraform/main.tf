@@ -15,7 +15,6 @@ resource "aws_instance" "langflow_ec2" {
   }
 }
 
-
 resource "aws_iam_role" "ecs_task_execution_role" {
   name = "ecsTaskExecutionRole"
 
