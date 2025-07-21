@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
 RUN pip install --no-cache-dir langflow==0.0.44
 
 EXPOSE 7860
+EXPOSE 8000
 
-CMD ["langflow", "--host", "0.0.0.0", "--port", "7860"]
+CMD ["langflow", "--host", "0.0.0.0", "--port", "7860", "8000"]
 
